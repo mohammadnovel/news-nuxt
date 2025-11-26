@@ -18,10 +18,13 @@ export async function getNews() {
 import { writeFile } from "fs/promises";
 import { join } from "path";
 
+import { logger } from "@/lib/logger";
+
 export async function createNews(formData: FormData) {
   const session = await getServerSession(authOptions);
   
   if (!session || !session.user?.id) {
+      await logger.warn("Unauthorized attempt to create news");
       return { error: "Unauthorized" };
   }
 
@@ -47,12 +50,13 @@ export async function createNews(formData: FormData) {
       image = `/uploads/${filename}`;
     } catch (error) {
       console.error("Error saving file:", error);
+      await logger.error("Failed to upload image during news creation", { error: String(error) });
       return { error: "Failed to upload image" };
     }
   }
 
   try {
-    await prisma.news.create({
+    const news = await prisma.news.create({
       data: {
         title,
         content,
@@ -62,10 +66,14 @@ export async function createNews(formData: FormData) {
         published: true,
       },
     });
+
+    await logger.info(`News created: ${title}`, { newsId: news.id, authorId: session.user.id });
     revalidatePath("/dashboard/news");
-    revalidatePath("/");
-    return { success: true };
+    revalidatePath("/news");
+    return { success: true, news };
   } catch (error) {
+    console.error("Error creating news:", error);
+    await logger.error("Failed to create news", { error: String(error) });
     return { error: "Failed to create news" };
   }
 }

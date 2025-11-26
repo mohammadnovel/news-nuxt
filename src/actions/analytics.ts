@@ -4,99 +4,109 @@ import { prisma } from "@/lib/prisma";
 
 export async function getDashboardStats() {
   try {
+    const now = new Date();
+    const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    
     // Get total counts
     const [totalArticles, totalUsers, totalCategories, totalViews] = await Promise.all([
-      prisma.news.count(),
+      prisma.news.count({ where: { published: true } }),
       prisma.user.count(),
       prisma.category.count(),
       prisma.news.aggregate({
-        _sum: {
-          views: true,
-        },
+        _sum: { views: true },
       }),
     ]);
 
-    // Get views over last 7 days
-    const sevenDaysAgo = new Date();
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-
-    const recentArticles = await prisma.news.findMany({
+    // Get this month's articles
+    const thisMonthArticles = await prisma.news.count({
       where: {
-        createdAt: {
-          gte: sevenDaysAgo,
-        },
-      },
-      select: {
-        createdAt: true,
-        views: true,
+        published: true,
+        createdAt: { gte: thisMonthStart },
       },
     });
 
-    // Group by date
-    const viewsByDate = recentArticles.reduce((acc: any, article) => {
-      const date = article.createdAt.toISOString().split('T')[0];
-      if (!acc[date]) {
-        acc[date] = 0;
-      }
-      acc[date] += article.views;
-      return acc;
-    }, {});
+    // Get last month's articles for comparison
+    const lastMonthArticles = await prisma.news.count({
+      where: {
+        published: true,
+        createdAt: {
+          gte: lastMonth,
+          lt: thisMonthStart,
+        },
+      },
+    });
 
-    const viewsChart = Object.entries(viewsByDate).map(([date, views]) => ({
-      date,
-      views,
-    }));
+    // Calculate percentage changes
+    const articlesChange = lastMonthArticles > 0 
+      ? ((thisMonthArticles - lastMonthArticles) / lastMonthArticles * 100).toFixed(1)
+      : "0";
 
-    // Get category distribution
+    // Get monthly views for last 12 months
+    const monthlyViews = [];
+    for (let i = 11; i >= 0; i--) {
+      const monthStart = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const monthEnd = new Date(now.getFullYear(), now.getMonth() - i + 1, 0);
+      
+      const articles = await prisma.news.findMany({
+        where: {
+          createdAt: {
+            gte: monthStart,
+            lte: monthEnd,
+          },
+        },
+        select: { views: true },
+      });
+      
+      const totalViews = articles.reduce((sum, article) => sum + article.views, 0);
+      
+      monthlyViews.push({
+        month: monthStart.toLocaleString('default', { month: 'short' }),
+        views: totalViews,
+        articles: articles.length,
+      });
+    }
+
+    // Get category distribution with percentages
     const categoryStats = await prisma.category.findMany({
       select: {
         name: true,
         _count: {
-          select: {
-            news: true,
-          },
+          select: { news: true },
         },
       },
     });
 
-    const categoryDistribution = categoryStats.map((cat) => ({
-      name: cat.name,
-      value: cat._count.news,
-    }));
+    const totalCategoryArticles = categoryStats.reduce((sum, cat) => sum + cat._count.news, 0);
+    const categoryDistribution = categoryStats
+      .map((cat) => ({
+        name: cat.name,
+        value: cat._count.news,
+        percentage: totalCategoryArticles > 0 
+          ? ((cat._count.news / totalCategoryArticles) * 100).toFixed(1)
+          : "0",
+      }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 5);
 
-    // Get top articles by views
+    // Mock user growth by location
+    const userGrowth = [
+      { country: "United States", users: 2417, code: "US" },
+      { country: "Germany", users: 812, code: "DE" },
+      { country: "Australia", users: 2281, code: "AU" },
+      { country: "France", users: 287, code: "FR" },
+    ];
+
+    // Get top articles
     const topArticles = await prisma.news.findMany({
       take: 5,
-      orderBy: {
-        views: 'desc',
-      },
+      orderBy: { views: 'desc' },
       select: {
         id: true,
         title: true,
         views: true,
         category: {
-          select: {
-            name: true,
-          },
-        },
-        createdAt: true,
-      },
-    });
-
-    // Get recent articles
-    const recentNews = await prisma.news.findMany({
-      take: 5,
-      orderBy: {
-        createdAt: 'desc',
-      },
-      select: {
-        id: true,
-        title: true,
-        author: {
-          select: {
-            name: true,
-            email: true,
-          },
+          select: { name: true },
         },
         createdAt: true,
       },
@@ -108,11 +118,15 @@ export async function getDashboardStats() {
         totalUsers,
         totalCategories,
         totalViews: totalViews._sum.views || 0,
+        thisMonthArticles,
+        articlesChange: parseFloat(articlesChange),
+        viewsChange: 12.4, // Mock percentage
+        visitorsChange: -2.1, // Mock percentage
       },
-      viewsChart,
+      monthlyViews,
       categoryDistribution,
+      userGrowth,
       topArticles,
-      recentNews,
     };
   } catch (error) {
     console.error('Error fetching dashboard stats:', error);
@@ -122,11 +136,15 @@ export async function getDashboardStats() {
         totalUsers: 0,
         totalCategories: 0,
         totalViews: 0,
+        thisMonthArticles: 0,
+        articlesChange: 0,
+        viewsChange: 0,
+        visitorsChange: 0,
       },
-      viewsChart: [],
+      monthlyViews: [],
       categoryDistribution: [],
+      userGrowth: [],
       topArticles: [],
-      recentNews: [],
     };
   }
 }

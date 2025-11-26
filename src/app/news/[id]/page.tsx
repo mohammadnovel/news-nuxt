@@ -1,6 +1,7 @@
 import { getNewsById, incrementNewsViews } from "@/actions/news";
 import { getCommentsByNewsId } from "@/actions/comment";
 import { Navbar } from "@/components/Navbar";
+import { Footer } from "@/components/Footer";
 import Comments from "@/components/Comments";
 import Link from "next/link";
 import { ArrowLeft, Calendar, User, Eye } from "lucide-react";
@@ -162,17 +163,7 @@ export default async function Page(props: PageProps) {
         <Comments newsId={params.id} comments={comments} />
       </main>
 
-      {/* Footer */}
-      <footer className="bg-black text-white mt-16 py-8">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center">
-            <div className="bg-red-600 text-white font-bold text-2xl px-2 py-1 tracking-tighter rounded-sm inline-block mb-4">
-              CNN
-            </div>
-            <p className="text-gray-400 text-sm">© 2025 Cable News Network. All Rights Reserved.</p>
-          </div>
-        </div>
-      </footer>
+      <Footer />
     </div>
   );
 }
